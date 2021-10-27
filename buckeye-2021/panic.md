@@ -22,7 +22,7 @@ Rust source code is easier to audit(TM) compared to C(++) code, because you *usu
 [Infectious unsafety](https://www.ralfj.de/blog/2016/01/09/the-scope-of-unsafe.html) means that anything unsafe code touches or relies upon is suspect, and our first job should be to audit the `safe_map.rs` module, which is ironically very unsafe.
 
 ```rust
-    impl<K: Hash + Eq, V> Drop for Slot<K, V> {
+impl<K: Hash + Eq, V> Drop for Slot<K, V> {
     fn drop(&mut self) {
         let mut cur = self.entry;
         while !cur.is_null() {
@@ -125,7 +125,7 @@ Are we on a debug build? Ahhh.
 
 Alright. Now my first thought was that we could call `give_administrators_big_bonuses` a lot of times to get an overflow, but it seems like the organizers
 took pity on us. `make_payment` is supposed to allow you to pay off your balance, but due to the lack of negative checking, you can use it to go into debt instead!
-Woo-hoo! If we take on a bunch of debt (to the tune of -9223372036854775800), then when the greedy admins give themselves raises, an overflow will occur. Let's
+Woo-hoo! If we take on a bunch of debt (to the tune of 9223372036854775800), then when the greedy admins give themselves raises, an overflow will occur. Let's
 test this.
 
 ```
@@ -151,7 +151,7 @@ the case. Our `key` is freed alongside the `full_name` however, so it's a lot mo
 
 # Heap Exploitation
 
-I'm not the best at heap exploitation, nor am I any good at explaining how the heap works, so if you're brand new to this, consider these few resources.
+I'm not the best at heap exploitation, nor am I that good at explaining how the heap works, so if you're brand new to this, consider these few resources.
 
 - https://heap-exploitation.dhavalkapil.com/diving_into_glibc_heap/bins_chunks
 - https://azeria-labs.com/heap-exploitation-part-2-glibc-heap-free-bins/
@@ -184,9 +184,9 @@ pub fn map_values<F>(&mut self, f: F) where F: (FnMut(&K, V) -> V) + Copy {
     }
 }
 ```
-So each slot is freed from 0 to 15, and each slot is freed according to the linked list (which by code review is a LIFO). I [ran this code](https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=c96abe9010f27465715c230cd27e02be) for several values of width
-and then hardcoded them into my Python script, so I can choose which bins to place items into. I can know control the order of the frees, although
-finangling everything into the right bins and times is still going to be a challenge.
+So each slot is freed from 0 to 15, and each slot is freed according to the linked list (which by code review is a LIFO). I [ran this code](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2021&gist=cb3edd2b944a79266aa1e056248279d6)
+for several values of width  and then hardcoded them into my Python script, so I can choose which bins to place items into. I can know control the order of the frees, although
+finangling everything into the right bins and at what times is still going to be a challenge.
 
 # Leaking libc
 
@@ -229,8 +229,9 @@ Before we do anything, our malloc bins look like this.
 Now recall that our key gets freed in addition to the name payload. If we want to access the content again to perform a UAF read, we'd need to predict what
 happens to the key after it gets freed. Luckily, the fastbins provide a way out. The first 8 bytes of the allocated content in a fastbin (once freed)
 point to the next chunk. If we could fill the tcache up and make this the first element in the fastbin, we could control the exact content of `key`. The next
-pointer would then be null, and because Rust strings are not C strings (they have a length instead of being null-terminated), the comparison works perfectly fine.
-With a bit of testing to ensure that both forms would map to the same bucket, the key `0000000033100000000000000000000000000000000000000000000000000000` was found.
+pointer would then be null (setting the first 8 bytes to null), and because Rust strings are not C strings (they have a length instead of being null-terminated),
+the comparison works perfectly fine. With a bit of testing to ensure that both forms would map to the same bucket,
+the key `0000000033100000000000000000000000000000000000000000000000000000` was found.
 
 Next up was simply iterating and testing the code. I experimentally determined the values I needed to fill up the tcache and no more, (there's some fun/weird
 allocation shenanigans going on, but that's for a bit later). We make the sizes of the id and the name differ to make sure they don't colliide and make our
@@ -262,7 +263,7 @@ for i in range(num_fill_tcache + 2):
     run_funds()
     p.clean()
 ```
-The first `num_fill_tcache +  1` fill up the tcache, and the last free frees the id of `first_uaf` into the fastbin and the name into the unsorted bin.
+The first `num_fill_tcache +  1` frees fill up the tcache, and the last free frees the id of `first_uaf` into the fastbin and the name into the unsorted bin.
 ```
 (gdb) heapinfoall
 
@@ -305,9 +306,11 @@ Sidenote: jupyter notebooks for pwn (especially heap) would be quite pog
 
 Now that we have libc, we just need an arbitrary write primitive. The easiest one I know is to free an allocation into both the tcache
 and the freelist, sort of what we have [in this how2heap example (fastbin_reverse_into_tcache)](https://github.com/shellphish/how2heap/blob/master/glibc_2.31/fastbin_reverse_into_tcache.c).
+The general idea is to convince malloc that a custom pointer we provide (while freed in the fastbin) is actually the pointer to the next chunk, so after enough allocations we get
+malloc to return an arbitrary pointer.
 
-You'll see a common theme here is to fill the tcache with a bunch of objects to defeat the mitigations put in place. This time, I chose the bucket of size 48, large enough that I would have some flexibility,
-but also small enough to not be cumbersome and not interact with the previously corrupted bins (mucking with those is an easy way to crash the program).
+You'll see a common theme here is to fill the tcache with a bunch of objects to defeat the mitigations put in place. This time, I chose the bucket containg size 48 (I think it's sized at 64), large enough that I would have some
+flexibility, but also small enough to not be cumbersome and not interact with the previously corrupted bins (mucking with those is an easy way to crash the program).
 
 ```python
 # we don't care about the 7 x 8 bytes
@@ -555,5 +558,5 @@ buckeye{p4n1c_15_n0t_ab0rt}
 ## Conclusion
 
 For my first hard heap challenge, and my first actual writeup, I think this was a lot more painful than I expected going in. I didn't have the willpower
-to stomach finishing this during the contest, but after having it done it - it wasn't too bad? Anyways, for all of the curveballs, this was a pretty standard libc 2.31 
+to stomach finishing this during the contest, but after having done it - it wasn't too bad? Anyways, for all of the curveballs, this was a pretty standard libc 2.31 
 heap pwn. I'm kinda scared for what'll have to be done once challenges move to 2.34 and beyond...
