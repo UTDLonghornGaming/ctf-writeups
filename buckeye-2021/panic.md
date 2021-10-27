@@ -1,6 +1,7 @@
 # Buckeye CTF 2021 - Panic Writeup
 
-This is my writeup for panic for the Buckeye CTF, and my first writeup in general.
+This is my writeup for panic for the Buckeye CTF, and my first writeup in general. This writeup doubles as some teaching material
+and a view of my train of thought, so it may be a bit long and verbose in sections.
 
 # First Analysis
 
@@ -17,7 +18,8 @@ Interesting... the binary has almost all of the mitigations enabled, which means
 
 ## Source Code Review
 
-Rust source code is easier to audit(TM) compared to C(++) code, because you *usually* only need  to look at the unsafe blocks (here, we have three mainly), or so was the common wisdom for a while. [Infectious unsafety however,](https://www.ralfj.de/blog/2016/01/09/the-scope-of-unsafe.html) means that anything unsafe code touches or relies upon is suspect, and our first job should be to audit the `safe_map.rs` module, which is ironically very unsafe.
+Rust source code is easier to audit(TM) compared to C(++) code, because you *usually* only need  to look at the unsafe blocks (here, we have three mainly), or so was the common wisdom for a while. This is only partially correct.
+[Infectious unsafety](https://www.ralfj.de/blog/2016/01/09/the-scope-of-unsafe.html) means that anything unsafe code touches or relies upon is suspect, and our first job should be to audit the `safe_map.rs` module, which is ironically very unsafe.
 
 ```rust
     impl<K: Hash + Eq, V> Drop for Slot<K, V> {
@@ -35,7 +37,7 @@ Rust source code is easier to audit(TM) compared to C(++) code, because you *usu
     }
 }
 ```
-This ccode simply traverses the linked list, freeing each slot iteratively to avoid a stack overflow. A simple `println` at the top of the method assures us it is never called until the program shuts down. Useless.
+This code simply traverses the linked list, freeing each slot iteratively to avoid a stack overflow. A simple `println` at the top of the method assures us it is never called until the program shuts down. Useless.
 
 ```rust
 fn get_mut<'a>(&'a mut self, k: &K) -> Option<&'a mut V> {
@@ -51,7 +53,7 @@ fn get_mut<'a>(&'a mut self, k: &K) -> Option<&'a mut V> {
     None
 }
 ```
-This code traverses a `Slot` and checks for an exact key match (likely to avoid hash collisions). If we could somehow mess with this linked list, it could dereference arbitrary pointers, but alas the list seems resistant to tampering.
+This code traverses a `Slot` and checks for an exact key match (likely to avoid hash collisions). If we could somehow mess with this linked list, we could dereference arbitrary pointers, but alas the list seems resistant to tampering.
 
 ```rust
 // maps values in-place
@@ -71,8 +73,8 @@ fn map_values<F>(&mut self, mut f: F) where F: (FnMut(&K, V) -> V) + Copy {
 }
 ```
 This code looks very suspect. We manifest a temporary `e`, of type `Entry<K, V>` from the pointer `cur`, and run a user supplied function on it.
-Afterwards, we then write `e` back to `cur`. `ptr::write`  swallows  the destructor call, but [as described here](https://github.com/sslab-gatech/Rudra#panic-safety-unsafe-code-that-can-create-memory-safety-issues-when-panicked), Rust functions can panic, and because
-the stack then unwinds, the destructor for `e` gets called. Let's look at the destructor for `Entry`,
+Afterwards, we then write `e` back to `cur`. `ptr::write`  swallows  the destructor call, but [as described here](https://github.com/sslab-gatech/Rudra#panic-safety-unsafe-code-that-can-create-memory-safety-issues-when-panicked),
+Rust functions can panic (and closures), and because the stack then unwinds, the destructor for `e` gets called. Let's look at the destructor for `Entry`,
 
 ```rust
 struct Entry<K: Hash + Eq, V> {
@@ -107,7 +109,6 @@ fn give_administrators_big_bonuses(accounts: &mut Store<String, Account>) {
 ```
 Ahha. Due to RAII, dropping an `Entry<String, Account>` will drop 2 things that we actually care about, a heap-allocated string representing the key,
 and a heap allocated string representing the full name. Now the closure on the other hand is a bit more difficult. Arithmetic operations can't panic in Rust...
-are we on a debug build? Oh wow.
 
 ```
 from rust:1.55 as builder
@@ -118,6 +119,7 @@ COPY . .
 # Yes, we are running a debug build
 RUN cargo build
 ```
+Are we on a debug build? Ahhh.
 
 ## Double Free Primitive
 
@@ -160,11 +162,15 @@ I'm not the best at heap exploitation, nor am I any good at explaining how the h
 Remember when I said foreshadowed that the checksec mitigations might've been useless. Well, that's not really the case. PIE upgrades the challenge by making us
 find a libc leak in addition to an arbitrary write.
 
-In additioon, this program is also using libc 2.31, so some mitigations have been put in place. Let's discuss them alongside our game plan. We can allocate arbitrary
-sized objects, so the most obvious way to get the libc address is to use the unsorted bins.
+In additioon, this program is also using libc 2.31, so some mitigations have been put in place. Let's discuss them alongside our game plan.
 
-The maximum size for fastbins is 80 bytes, so if we allocate something not too much larger, say 128 bytes, then after those allocations fill the fastbin,
-they should go straight to the unsorted bin. Let's try it.  
+We can allocate arbitrary sized objects, so the most obvious way to get the libc address is to use the unsorted bins. These bins are doubly-linked and point back
+to an internal libc structure eventually, but we can bypass that by ensuring our chunk is the only one in the unsorted bin.
+
+The maximum size for fastbins is 80 bytes, so if we allocate something not too much larger, say 128 bytes. For allocations of these size, the objects will first go into
+a simple cache called the tcache. This cache is quite useless as it contains no pointers to anything of value, and in addition, we can't free anything currently already in
+the tcache (glibc will run a linear scan as a sanity check). Luckikly, the tcache only contains at most 7 freed chunks of any given size, so if we manage to fill it,
+allocations of 128 bytes should go straight into the unsorted bin. Let's try it.
 
 ## Free(dom and) Order
 
@@ -195,7 +201,8 @@ sixfour = solver_data.sixfour()
 onetwoeight = solver_data.onetwoeight()
 ```
 
-`bins` takes one of the 4 sizes to determine how long the string should be, and `b` to determine which bin you want an account placed into.
+`bins` takes one of the 4 sizes to determine how long the string should be, and `b` to determine which bin you want an account placed into. I've also created
+some functions that simply wrap the menu choices, simply to make it easier on myself when actually writing the exploit.
 
 ## For real this time
 Before we do anything, our malloc bins look like this.
@@ -222,8 +229,8 @@ Before we do anything, our malloc bins look like this.
 Now recall that our key gets freed in addition to the name payload. If we want to access the content again to perform a UAF read, we'd need to predict what
 happens to the key after it gets freed. Luckily, the fastbins provide a way out. The first 8 bytes of the allocated content in a fastbin (once freed)
 point to the next chunk. If we could fill the tcache up and make this the first element in the fastbin, we could control the exact content of `key`. The next
-pointer would then be null, and because Rust strings are not C strings, the comparison still works perfectly fine. With a bit of testing to ensure that
-both forms would map to the same bucket, the key `0000000033100000000000000000000000000000000000000000000000000000` was found.
+pointer would then be null, and because Rust strings are not C strings (they have a length instead of being null-terminated), the comparison works perfectly fine.
+With a bit of testing to ensure that both forms would map to the same bucket, the key `0000000033100000000000000000000000000000000000000000000000000000` was found.
 
 Next up was simply iterating and testing the code. I experimentally determined the values I needed to fill up the tcache and no more, (there's some fun/weird
 allocation shenanigans going on, but that's for a bit later). We make the sizes of the id and the name differ to make sure they don't colliide and make our
@@ -299,8 +306,9 @@ Sidenote: jupyter notebooks for pwn (especially heap) would be quite pog
 Now that we have libc, we just need an arbitrary write primitive. The easiest one I know is to free an allocation into both the tcache
 and the freelist, sort of what we have [in this how2heap example (fastbin_reverse_into_tcache)](https://github.com/shellphish/how2heap/blob/master/glibc_2.31/fastbin_reverse_into_tcache.c).
 
-This time, I chose the bucket of size 48, as something that was small enough to be workable but large enough to have some flexibility and not
-trample over anything previously done.
+You'll see a common theme here is to fill the tcache with a bunch of objects to defeat the mitigations put in place. This time, I chose the bucket of size 48, large enough that I would have some flexibility,
+but also small enough to not be cumbersome and not interact with the previously corrupted bins (mucking with those is an easy way to crash the program).
+
 ```python
 # we don't care about the 7 x 8 bytes
 # 7 x 48 bytes to fill
@@ -348,8 +356,9 @@ for i in range(7):
     new_acct(t, b'')
     p.clean()
     
-# we still need to free bad_chunk once more,
-# so it goes to the tcache and not the fastbin
+# the last chunk in the original 7 chunks
+# will be freed twice, once into the fastbin
+# and once into the tcache
 run_funds()
 ```
 ```
@@ -372,16 +381,17 @@ run_funds()
 (0x30)   tcache_entry[1](1): 0x5577b30ee150
 (0x40)   tcache_entry[2](3): 0x5577b30ee6d0 --> 0x5577b30ee5b0 --> 0x5577b30ee610
 (0x60)   tcache_entry[4](1): 0x5577b30ee430
-(0x80)   tcache_entry[6](1): 0x5577b30eb480
+(0x80)   tcache_entry[6](1): 0x5577b30eb480s
 (0x90)   tcache_entry[7](7): 0x5577b30ee220 --> 0x5577b30edfc0 --> 0x5577b30ede90 --> 0x5577b30edd60 --> 0x5577b30edc10 --> 0x5577b30edb80 --> 0x5577b30ee2b0
 (0x100)   tcache_entry[14](1): 0x5577b30eb910
 (0x1e0)   tcache_entry[28](1): 0x5577b30eb2a0
 ```
 Huh????? Where did my fastbin entry go? Oh, they might've been promoted into the tcache (rules for which are quite frankly arcane and I don't really understand). Hmmm....
+
 Note: heapinfoall_s are collected seperately, so addresses may differ from one to another due to ASLR - focus on their quantity
 
 ## Wait what
-Maybe off by one error? Let's only allocate 6 instead of 7.
+Maybe off by one error? Let's try only allocating 6 instead of 7.
 ```
 (gdb) heapinfoall
 
@@ -407,7 +417,8 @@ Maybe off by one error? Let's only allocate 6 instead of 7.
 (0x100)   tcache_entry[14](1): 0x564abb625910
 (0x1e0)   tcache_entry[28](1): 0x564abb6252a0
 ```
-Nope still here. Something must be allocating multiple copies and freeing all but one. Let's take a look.
+Nope, the tcache and fastbin combined contain more than one entry. And on further reading it does look like whenever glibc needs to go into the fastbin,
+it moves some elements to the tcache as an optimization. Something must be allocating multiple copies and then freeing them. Let's take a look.
 
 ```rust
 fn new_account(accounts: &mut Store<String, Account>) {
@@ -476,25 +487,29 @@ p.clean()
 ```
 heapinfoall knows... It knows too well...
 
-## It has been way too long
-Homeeeeee sweeeeet homeeeeeee. Let's set up this chunk so that allocate two more times will give us the `__free_hook`. The first writable byte of a
-fastbin is the forwards pointer. There are checks/mitigations to make sure the jump location is sane, but it appears (?) like we lucked out on this binary, as
+## Arbitrary write primitive (a primitive way indeed)
+Homeeeeee sweeeeet homeeeeeee. Let's set up this chunk so that allocating two more times will give us the `__free_hook`. The first 8 bytes that we can write to of a fastbin
+(remember a fastbin extends back behind the pointer we are given) contains the address for the next bin. Overwriting that should make malloc return an arbitrary pointer,
+giving us an arbitrary write primitive. There are checks/mitigations to make sure the jump location is sane, but it appears (?) like we lucked out on this binary, as
 the simple offset of 16 works.
+
+This simple offset is of size 16 because in libc 2.31 there are two addresses stored behind the writable pointer we are given. If we were to run into
+mitigations, we could extend the offset backwards even more to hopefully land in a memory location that bypasses them due to preexisting/uninitalized memory.
 
 ```python
 free_hook = libc_base + libc.sym.__free_hook
 # write 16 bytes backwards as fastbins
 # reserve 16 bytes for internal metadata
-try_free = p64(free_hook - 16).ljust(48, b'A') + b' ' * 128
 # this allocates ... ughhh
+try_free = p64(free_hook - 16).ljust(48, b'A') + b' ' * 128
 new_acct(try_free, b'')
 p.clean()
 ```
 ```
 Account ID: Full Name: Could not read account name.
 ```
-What? This only occurs if `prompt_for` fails, which only occurs when (scrolls up) it's not a UTF-8 string, or reading in from terminal fails. Probably the former
-considering I'm bitpacking ints. Luckily, it sometimes doesn't error, so I can probably just ... add a `while True:` and some error checking.
+What? This only occurs if `prompt_for` fails, which only occurs when (scrolls up) the string is invalid UTF-8, or reading in from terminal fails. Probably the former
+considering the bitpacked ints. Luckily, it sometimes doesn't error, so I can probably just ... add a `while True:` and some error checking.
 
 Is it time?
 
@@ -541,4 +556,4 @@ buckeye{p4n1c_15_n0t_ab0rt}
 
 For my first hard heap challenge, and my first actual writeup, I think this was a lot more painful than I expected going in. I didn't have the willpower
 to stomach finishing this during the contest, but after having it done it - it wasn't too bad? Anyways, for all of the curveballs, this was a pretty standard libc 2.31 
-heap pwn. I'm kinda scared for what'll have to be done once we move to 2.34 and beyond...
+heap pwn. I'm kinda scared for what'll have to be done once challenges move to 2.34 and beyond...

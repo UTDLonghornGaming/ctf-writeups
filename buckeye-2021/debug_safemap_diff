@@ -1,0 +1,179 @@
+diff --git a/./src/safe_map.rs b/./src1/safe_map.rs
+index fac3944..c5589e9 100755
+--- a/./src/safe_map.rs
++++ b/./src1/safe_map.rs
+@@ -1,38 +1,41 @@
+-// type Key = u32;
++// type Stringey = u32;
+ const NUM_BINS: usize = 16;
+ const MAX_BINSIZE: usize = 16;
+ 
++use std::fmt::Debug;
+ use std::ptr;
+ use std::hash::{Hash, Hasher};
+ use std::collections::hash_map::DefaultHasher;
+ use std::cmp::Eq;
+ 
++use crate::Account;
++
+ fn calculate_hash<T: Hash + Eq>(t: &T) -> u64 {
+     let mut s = DefaultHasher::new();
+     t.hash(&mut s);
+     s.finish()
+ }
+-
+-struct Entry<K: Hash + Eq, V> {
+-    key: K,
+-    val: V,
+-    next: *mut Entry<K, V>
++#[derive(Debug)]
++struct Entry {
++    key: String,
++    val: Account,
++    next: *mut Entry
+ }
+ 
+-
+-struct Slot<K: Hash + Eq, V> {
+-    entry: *mut Entry<K, V>,
++#[derive(Debug)]
++struct Slot {
++    entry: *mut Entry,
+     count: usize
+ }
+ 
+-impl<K: Hash + Eq, V> Drop for Slot<K, V> {
++impl Drop for Slot {
+     fn drop(&mut self) {
+         let mut cur = self.entry;
+         while !cur.is_null() {
+             unsafe {
+                 let e = Box::from_raw(cur);
+                 cur = (*e).next;
+-                // println!("Slot, dropping {}", e.val);
++                println!("Slot, dropping {:?}", e.val);
+                 // explicitly free each Entry
+                 drop(e);
+             }
+@@ -40,9 +43,13 @@ impl<K: Hash + Eq, V> Drop for Slot<K, V> {
+     }
+ }
+ 
+-impl<K: Hash + Eq, V> Slot<K, V> {
+-    fn add(&mut self, k: K, val: V) {
+-        assert!(self.get(&k).is_none(), "Duplicate key");
++impl Slot {
++    fn add(&mut self, k: String, val: Account) {
++        let wat = self.get(&k);
++        if wat.is_some() {
++            println!("{:p}", wat.unwrap());
++        }
++        assert!(wat.is_none(), "Duplicate key");
+         assert!(self.count < MAX_BINSIZE, "Bin full");
+         self.entry = Box::into_raw(
+             Box::new(Entry {
+@@ -54,7 +61,7 @@ impl<K: Hash + Eq, V> Slot<K, V> {
+         self.count += 1;
+     }
+ 
+-    fn get_mut<'a>(&'a mut self, k: &K) -> Option<&'a mut V> {
++    fn get_mut<'a>(&'a mut self, k: &String) -> Option<&'a mut Account> {
+         let mut cur = self.entry;
+         while !cur.is_null()  {
+             unsafe {
+@@ -67,7 +74,7 @@ impl<K: Hash + Eq, V> Slot<K, V> {
+         None
+     }
+ 
+-    fn get<'a>(&'a self, k: &K) -> Option<&'a V> {
++    fn get<'a>(&'a self, k: &String) -> Option<&'a Account> {
+         let mut cur = self.entry;
+         while !cur.is_null()  {
+             unsafe {
+@@ -81,11 +88,16 @@ impl<K: Hash + Eq, V> Slot<K, V> {
+     }
+ 
+     // maps values in-place
+-    fn map_values<F>(&mut self, mut f: F) where F: (FnMut(&K, V) -> V) + Copy {
++    fn map_values<F>(&mut self, mut f: F) where F: (FnMut(&String, Account) -> Account) + Copy {
+         let mut cur = self.entry;
+         while !cur.is_null()  {
+             unsafe {
+                 let mut e = ptr::read(cur);
++                println!("Reading cur {:p}", cur);
++                println!("Reading cur key {:p}", e.key.as_ptr());
++                println!("Reading cur name {:p}", (*cur).val.full_name.as_ptr());
++                // println!("Cur 1 {:?}", e.key);
++                // println!("Cur 2 {:?}", e.val);
+ 
+                 // map
+                 e.val = f(&e.key, e.val);
+@@ -97,7 +109,7 @@ impl<K: Hash + Eq, V> Slot<K, V> {
+     }
+ }
+ 
+-impl<K: Hash + Eq, V> Default for Slot<K, V> {
++impl Default for Slot {
+     fn default() -> Self {
+         Slot {
+             entry: ptr::null_mut(),
+@@ -106,43 +118,48 @@ impl<K: Hash + Eq, V> Default for Slot<K, V> {
+     }
+ }
+ 
+-pub struct Store<K: Hash + Eq, V> {
+-    slots: [Slot<K, V>; NUM_BINS]
++pub struct Store {
++    slots: [Slot; NUM_BINS]
+ }
+ 
+-impl<K: Hash + Eq, V> Store<K, V> {
+-    fn get_bin(&self, k: &K) -> &Slot<K, V> {
++impl Store {
++    fn get_bin(&self, k: &String) -> &Slot {
+         let bin_num = (calculate_hash(&k) as usize) % NUM_BINS;
+         &self.slots[bin_num]
+     }
+ 
+-    fn get_bin_mut(&mut self, k: &K) -> &mut Slot<K, V> {
++    fn get_bin_mut(&mut self, k: &String) -> &mut Slot {
+         let bin_num = (calculate_hash(&k) as usize) % NUM_BINS;
+         &mut self.slots[bin_num]
+     }
+ 
+-    pub fn set(&mut self, k: K, val: V) {
++    pub fn set(&mut self, k: String, val: Account) {
+         // let boxed = Box::new(val);
+         self.get_bin_mut(&k).add(k, val);
+     }
+ 
+-    pub fn get(&self, k: &K) -> Option<&V> {
++    pub fn get(&self, k: &String) -> Option<&Account> {
+         return self.get_bin(k).get(k);
+     }
+ 
+-    pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
++    pub fn get_mut(&mut self, k: &String) -> Option<&mut Account> {
+         return self.get_bin_mut(k).get_mut(k);
+     }
+ 
+-    pub fn map_values<F>(&mut self, f: F) where F: (FnMut(&K, V) -> V) + Copy {
++    pub fn map_values<F>(&mut self, f: F) where F: (FnMut(&String, Account) -> Account) + Copy {
++        let mut i = 0;
+         for slot in &mut self.slots {
++            println!("Slot {}", i);
++            i = i + 1;
+             slot.map_values(f);
+         }
+     }
+ 
+-    pub fn new() -> Store<K, V> {
++    pub fn new() -> Store {
+         Store { 
+             slots: Default::default()
+         }
+     }
+ }
++
++// 9223372036854775800
+\ No newline at end of file

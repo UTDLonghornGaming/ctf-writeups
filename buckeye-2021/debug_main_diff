@@ -1,0 +1,110 @@
+diff --git a/./src/main.rs b/./src1/main.rs
+index 426972a..de1b498 100755
+--- a/./src/main.rs
++++ b/./src1/main.rs
+@@ -4,9 +4,10 @@ use std::panic::{self, AssertUnwindSafe};
+ use std::io::{self, Read, Write, BufRead};
+ use std::cmp::Ordering;
+ 
+-struct Account {
++#[derive(Debug)]
++pub struct Account {
+     full_name: String,
+-    balance: i64
++    balance: i64,
+ }
+ 
+ impl Account {
+@@ -25,7 +26,7 @@ impl Account {
+ 
+ macro_rules! could_panic {
+     ($closure:tt) => {
+-        panic::catch_unwind(AssertUnwindSafe($closure));
++        panic::catch_unwind(AssertUnwindSafe($closure))
+     };
+ }
+ 
+@@ -45,17 +46,17 @@ fn get_i64() -> Option<i64> {
+     trimmed.parse::<i64>().ok()
+ }
+ 
+-fn get_acct(accounts: &Store<String, Account>) -> Option<&Account> {
++fn get_acct(accounts: &Store) -> Option<&Account> {
+     let account_num = prompt_for("Please enter your account number: ")?;
+     accounts.get(&account_num.trim().to_string())
+ }
+ 
+-fn get_acct_mut(accounts: &mut Store<String, Account>) -> Option<&mut Account> {
++fn get_acct_mut(accounts: &mut Store) -> Option<&mut Account> {
+     let account_num = prompt_for("Please enter your account number: ")?;
+     accounts.get_mut(&account_num.trim().to_string())
+ }
+ 
+-fn get_balance(accounts: &Store<String, Account>) {
++fn get_balance(accounts: &Store) {
+     if let Some(acct) = get_acct(accounts) {
+         acct.display();
+     } else {
+@@ -63,7 +64,7 @@ fn get_balance(accounts: &Store<String, Account>) {
+     }
+ }
+ 
+-fn make_payment(accounts: &mut Store<String, Account>) {
++fn make_payment(accounts: &mut Store) {
+     if let Some(acct) = get_acct_mut(accounts) {
+         print!("How much would you like to pay? ");
+         io::stdout().flush().unwrap();
+@@ -86,13 +87,27 @@ fn prompt_for(s: &str) -> Option<String> {
+ 
+     handle.read_until(b'\n', &mut input).ok()?;
+     let input_s = String::from_utf8(input).ok()?;
+-    return Some(input_s.trim().to_string())
++    println!("VALID");
++    let z = input_s.trim();
++    println!();
++    println!("WOW TRIMMED {}", z);
++    let a = z.to_string();
++    println!("CAP {} NO CAP {}", input_s.capacity(), a.capacity());
++    return Some(a)
+ }
+ 
+-fn new_account(accounts: &mut Store<String, Account>) {
++fn new_account(accounts: &mut Store) {
+     if let (Some(acct_id), Some(full_name)) = (prompt_for("Account ID: "), prompt_for("Full Name: ")) {
++        println!("id ptr {:p}", acct_id.as_ptr());
++        println!("id cap {}", acct_id.capacity());
++        println!("name ptr {:p}", full_name.as_ptr());
++        println!("name cap {}", full_name.capacity());
++        #[allow(unused_parens)]
+         let result = could_panic!((|| {
+-            accounts.set(acct_id, Account { full_name: full_name.clone(), balance: 0 });
++            let a = full_name.clone();
++            println!("a ptr {:p}", a.as_ptr());
++            println!("a {}", a.capacity());
++            accounts.set(acct_id, Account { full_name: a, balance: 0 });
+         }));
+         match result {
+             Err(_) => println!("Sorry, we couldn't open an account for you."),
+@@ -100,10 +115,12 @@ fn new_account(accounts: &mut Store<String, Account>) {
+         }
+     } else {
+         println!("Could not read account name.");
++        std::process::abort();
+     }
+ }
+ 
+-fn give_administrators_big_bonuses(accounts: &mut Store<String, Account>) {
++fn give_administrators_big_bonuses(accounts: &mut Store) {
++    #[allow(unused_parens)]
+     let result = could_panic!((|| {
+         accounts.map_values(|_key, mut account: Account| -> Account {
+             account.balance += 1000;
+@@ -126,7 +143,7 @@ fn menu() {
+ }
+ 
+ fn main() {
+-    let mut accounts: Store<String, Account> = Store::new();
++    let mut accounts: Store = Store::new();
+     println!("TUITION COLLECTION SYSTEM");
+     println!("v0.5");
+     println!("=========================");
