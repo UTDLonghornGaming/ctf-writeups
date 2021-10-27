@@ -184,8 +184,8 @@ pub fn map_values<F>(&mut self, f: F) where F: (FnMut(&K, V) -> V) + Copy {
     }
 }
 ```
-So each slot is freed from 0 to 15, and each slot is freed according to the linked list (which by code review is a LIFO). I [ran this code](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2021&gist=cb3edd2b944a79266aa1e056248279d6)
-for several values of width  and then hardcoded them into my Python script, so I can choose which bins to place items into. I can know control the order of the frees, although
+So the slots are freed from 0 to 15, and each slot is freed by iterating the linked list (which by code review is a LIFO). I [ran this code](https://play.rust-lang.org/?version=nightly&mode=debug&edition=2021&gist=cb3edd2b944a79266aa1e056248279d6)
+for several values of width  and then hardcoded them into my Python script, so I can choose which bins to place items into. I can now control the order of the frees, although
 finangling everything into the right bins and at what times is still going to be a challenge.
 
 # Leaking libc
