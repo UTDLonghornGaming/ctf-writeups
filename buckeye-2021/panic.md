@@ -146,7 +146,7 @@ Aborted
 
 ## UAF Primitive
 
-In theory there's a simple use-after-free in the program (simply reqquset thte balance of a freed account, and on small enough string sizes that does appear to be
+In theory there's a simple use-after-free in the program (simply request the balance of a freed account), and on small enough string sizes that does appear to be
 the case. Our `key` is freed alongside the `full_name` however, so it's a lot more difficult than other CTFs where you can simply type a number...
 
 # Heap Exploitation
