@@ -4,7 +4,7 @@ This problem could have been solved with a lot of time and effort, but screw tha
 
 ## Analysis
 
-We are provided with a dump file, which I presume contains information of some sort. Too much information, for that matter.
+We are provided with a dump file, which I presume contains information of some sort. Too much information to look through manually, for that matter.
 
 ## Forensic Analysis
 
