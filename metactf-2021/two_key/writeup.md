@@ -1,4 +1,4 @@
-# MetaCTF 2021 - Two Key Crypto Writeup
+# MetaCTF 2021 - Two Key Crypto - Writeup
 
 Let me be the first to say I hate this. It's a pwn btw.
 
