@@ -1,4 +1,4 @@
-# MetaCTF 2021 - The Carver - Writeup
+# MetaCTF 2021 - The Carver - Writeup - 475 points
 
 This problem could have been solved with a lot of time and effort, but screw that. 
 
