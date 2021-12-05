@@ -4,7 +4,7 @@ Let me be the first to say I hate this. It's a pwn btw.
 
 # Source Analysis
 
-So the encryption used appears to be a symmetric encryption scheme, with the key derived from XORing together two keys. The actual encryption itself appears to be pretty solid (at least to non nation-state attacks), and I was unable to find a way a way to break it. One important note is that this appears to be a CBC cipher, which will come in handy later.
+So the encryption used appears to be a symmetric encryption scheme, with the key derived from XORing together two keys. The actual encryption itself appears to be pretty solid (at least to non nation-state attacks), and I was unable to find a way to break it. One important note is that this appears to be a CBC cipher, which will come in handy later.
 
 ```c
 void encrypt_block(unsigned char* block, unsigned char* key){
