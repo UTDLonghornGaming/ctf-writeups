@@ -9,7 +9,7 @@ We are provided with a dump file, which I presume contains information of some s
 ## Forensic Analysis
 
 Since we know from the description that our flag is in standard `MetaCTF{}` format, I converted the string `MetaCT` to Base64, resulting in `TWV0YUNU`.
-I searched the dump file for this string. No results. 
+I ctrl-f'd the dump file for this string. No results. 
 
 However, scrolling through the dump file, we see strings such as `C o o r d i n a t e d   U n i v e r s a l   T i m e`, which contains spaces between every letter.
 This inspired me to search the dump file for the string `T W V 0 Y U N U`, and we get a couple hits!
