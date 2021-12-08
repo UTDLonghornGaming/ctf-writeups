@@ -10,7 +10,7 @@ We found two different ways to crack this problem:
 
 ## GCD Attack
 
-First, since we are given so many modulo, we can find the GCDs of each unique pair of moduli using the Extended Euclidean Algorithm, which runs in O(log N) time. If the GCD of any particular pair does not equal one, then they share a common prime factor, and we can easily crack the RSA formula. 
+First, since we are given so many moduli, we can find the GCDs of each unique pair of moduli using the Extended Euclidean Algorithm, which runs in O(log N) time. If the GCD of any particular pair does not equal one, then they share a common prime factor, and we can easily crack the RSA formula. 
 
 As it turns out, the first modulus and the last modulus share a common factor, which can be used to find their respective private keys.
 
