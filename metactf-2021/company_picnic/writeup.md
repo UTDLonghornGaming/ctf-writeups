@@ -37,11 +37,11 @@ print(long_to_bytes(d2)) #b'are_not_that_randoM}'
 
 ## Wiener's attack
 
-Each moduli is comprised of 512 hex characters, meaning that they are 2048-bits total.
-Because we know that the private keys are concatenated form the flag, we might suspect that the private keys are much smaller than 2048-bits moduli, which would typically be able to depict 256 ASCII characters.
+Each moduli is comprised of 512 hex characters, meaning that they are 2048 bits total.
+Because we know that the private keys are concatenated to form the flag, we might suspect that the private keys are much smaller than 2048-bits, which would typically be able to depict 256 ASCII characters.
 
 As it turns out, when private keys are much smaller than the modulus, there is a quick deterministic way to find them, known as Weiner's attack.
-While this attack is implementable some knowledge of continued fractions, we can also easily apply it by importing orisano's owiener library.
+While this attack is implementable with some knowledge of continued fractions, we can also easily apply it by importing orisano's owiener library.
 
 ```
 import owiener
