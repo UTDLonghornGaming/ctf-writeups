@@ -1,4 +1,4 @@
-# MetaCTF 2021 - Company Picnic - Writeup - 225 points
+# MetaCTF 2021 - Company Picnic - 225 points - Writeup
 
 ## Analysis
 
